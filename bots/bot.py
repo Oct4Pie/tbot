@@ -1,18 +1,21 @@
-#from keep_alive import keep_alive
+#from packages import install
+#install()
+import telebot
+#from remain_up import remain_up
 from text import *
 from random import *
 import time
+import json
 import os
+import traceback
+import subprocess
+import secrets
 from threading import Thread
 
 ##init##
 #import my_apis as api
-'''keep_alive()
-os.system("pip3 uninstall telebot -y")
-os.system("pip3 uninstall pytelegrambotapi -y")
-os.system("pip3 install pytelegrambotapi")
-'''
-import telebot
+
+#remain_up()
 
 
 class Break(Exception):
@@ -40,6 +43,60 @@ app = telebot.TeleBot(API_TOKEN)
 ##COMMANDS##
 
 
+def restrict_user(user_id, until_date, *args):
+    app.restrict_chat_member(
+        can_send_messages="mute" in args,
+        can_add_web_page_previews=True,
+        can_invite_users="no_invite" in args,
+        can_send_media_messages="no_media" in args,
+        can_send_other_messages="no_msg" in args,
+        )
+
+
+def run_python3(message):
+    run = message.text.replace('/python3', '')
+
+    script = 'import sys\n'
+    script += 'import traceback\n'
+    script += "err = ''\n"
+    script += 'try:\n'
+    for line in run.splitlines():
+        script += f'\t{line}\n'
+    script += 'except:\n'
+    script += '\ttraceback.print_exc(file=sys.stdout)\n'
+    #script += '\tsys.stdout.write(err)'
+
+    py_file = os.path.join(
+      "scripts",
+      secrets.token_hex(nbytes=16)
+      )
+    py_file_wrapper = open(
+    py_file,
+    "w"
+    )
+
+    py_file_wrapper.write(script)
+
+    py_file_wrapper.close()
+
+    try:
+        result = os.popen(f"python3 {py_file}").read()
+        if result is None or result == '':
+            os.remove(py_file)
+            return "No output"
+
+        os.remove(py_file)
+        return result
+
+    except:
+        err = traceback.format_exc()
+        os.remove(py_file)
+        if err is None or err == '':
+            return "Error in executing script"
+        return err
+
+    os.remove(py_file)
+
 def is_alive(threads):
     return True in [thread.is_alive() for thread in threads]
 
@@ -48,7 +105,7 @@ def delete_message(chat_id, msg_id):
     global msg
 
     try:
-        print(app.delete_message(chat_id, msg_id))
+        app.delete_message(chat_id, msg_id)
         msg += 1
     except:
         pass
@@ -91,14 +148,14 @@ def can_restrict_members(message):
     return message.can_restrict_members()
 
 
-def is_admin(chat_id, user_id, *args):
+def is_admin(chat_id, user_id):
     user = app.get_chat_member(chat_id, user_id)
     user_type = user.status
 
     if user_type == "creator":
         return (True, True)
 
-    elif user_type == "administrators":
+    elif user_type == "administrator":
         return (True, False)
 
     return (False, False)
@@ -130,9 +187,14 @@ def hi(message):
     send(message, 'hello')
 
 
+@app.message_handler(commands=['leave'])
+def hi(message):
+    app.leave_chat(message.chat.id)
+    send(message, 'fuck you guys')
+
 @app.message_handler(commands=['start'])
 def start(message):
-    send(message, abouth)
+    send(message, about)
 
 
 @app.message_handler(commands=['help'])
@@ -150,26 +212,23 @@ def rules(message):
     send(message, rule)
 
 
-@app.message_handler(commands=['start', 'num'])
+@app.message_handler(commands=['start'])
 def test(message):
     send(message, message.command)
 
 
 @app.message_handler(commands=['todo'])
 def todo(message):
-    f = open('todo.txt', "r")
-    a = f.read()
-    f.close()
-    send(message, a)
+    send(message, 'hmmm')
 
 
-@app.message_handler(commands=['stupid', 'id'])
-def stupid(client, message):
-    i = choice(stupi)
-    if message.command[1] == '@Arydev' or message.command[1] == 'Arydev':
-        i = 'is not'
-    send(message, f"{message.command[1]} {i} stupid")
+@app.message_handler(commands=['stupid'])
+def stupid(message):
+    send(message, "stupid")
 
+@app.message_handler(commands=['die'])
+def stupid(message):
+    send(message, "bot died")
 
 @app.message_handler(commands=['kick'])
 def kick(message):
@@ -177,13 +236,14 @@ def kick(message):
         chat_id = message.chat.id
         user_id = message.from_user.id
         admin, can_kick = is_admin(chat_id, user_id)
+        user = app.get_chat_member(chat_id, user_id)
 
         if not admin:
             send(message, "You need to be an admin to execute this command")
             return
 
         if admin and not can_kick:
-            if not user.can_restrict_members():
+            if not user.can_restrict_members:
                 send(message, "You don't have sufficient permission")
                 return
 
@@ -192,6 +252,10 @@ def kick(message):
             return
 
         member, member_id = get_user(message)
+
+        if member_id == app.get_me().id:
+          send(message, '🧐')
+          return
 
         if app.get_chat_member(chat_id, member_id).status == "left":
             send(message, "Not a member")
@@ -205,7 +269,6 @@ def kick(message):
             send(message, "Bot cannot restrict members")
             return
 
-        print(message)
         #user, user_id = get_user(message)
 
         if is_admin(chat_id, member_id)[0]:
@@ -229,22 +292,26 @@ def kick(message):
 @app.message_handler(commands=['delete'])
 def delete(message):
     global msg, to_delete
-    admin, can_edit = is_admin(message.chat.id, message.from_user.id, message)
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    
+    admin, can_edit = is_admin(chat_id, user_id)
     user = app.get_chat_member(message.chat.id,  message.from_user.id)
-    print(message)
 
     if not is_bot_admin:
         send(message, "Bot is not admin")
         return
 
     if not bot_can_delete_messages(message.chat.id):
-        send(message, "Bot can't edit messsages")
+        send(message, "Bot can't delete messsages")
         return
 
     if not admin:
         send(message, "You need to be an admin to execute this command")
+        return
+
     if admin and not can_edit:
-        if not user.can_edit_messages:
+        if not user.can_delete_messages:
             send(message, "Sorry, you dont have enough permission to execute this command")
             return
 
@@ -252,7 +319,6 @@ def delete(message):
         send(message, delete_usage)
         return
 
-    print(message)
     user, user_id = get_user(message)
     to_delete = 1
     deleted = 0
@@ -269,13 +335,11 @@ def delete(message):
             message.chat.id,
             message.reply_to_message.message_id
         )
-        app.delete_message(
-            message.chat.id,
-            last_message
-        )
+        
         return
 
     if to_delete > 10:
+        last_message -= 1
         while 1:
             if last_message == 0 or thread_count > 500:
                 break
@@ -284,8 +348,6 @@ def delete(message):
                 target=delete_message,
                 args=[message.chat.id, last_message]
                 )
-
-            print(msg, thread_count, to_delete, last_message)
 
             threads.append(d_thread)
 
@@ -302,11 +364,12 @@ def delete(message):
                 break
 
             last_message -= 1
-            return
+        return
 
     msg += 1
 
     while deleted != to_delete:
+
         try:
             app.delete_message(
                 message.chat.id,
@@ -319,10 +382,21 @@ def delete(message):
         msg += 1
 
 
+@app.message_handler(commands=['test'])
+def test(message):
+    send(message, "bot is alive")
+
+
+@app.message_handler(commands=['python3'])
+def python3(message):
+    print(message.text)
+    send(message, run_python3(message))
+
+
 @app.message_handler(commands=['whois'])
 def whois(message):
     if get_user(message) is None:
-        send(message, whois_usage)
+        send(message, json.loads(whois_usage))
         return
 
     user, user_id = get_user(message)
@@ -346,6 +420,20 @@ def pardon(message):
     send(message, f"{user_id} is unbaned")
 
 
+@app.message_handler(commands=['unmute'])
+def unmute(message):
+    if get_user(message) is None:
+        send(message, unmute_usage)
+        return
+
+    user, user_id = get_user(message)
+    app.restrict_chat_member(
+        message.chat.id, user_id,
+        can_send_messages=True
+        )
+
+    send(message, f"{user_id} is unmuted")
+    
 @app.message_handler(commands=['mute24'])
 def mute24(message):
     if get_user(message) is None:
@@ -353,7 +441,12 @@ def mute24(message):
         return
 
     user, user_id = get_user(message)
-    app.restrict_chat_member(message.chat.id, user_id, until_date=time.time()+86400)
+    app.restrict_chat_member(
+        message.chat.id, user_id, 
+        until_date=time.time()+86400,
+        can_send_messages=False
+        )
+    
     send(message, f"{user_id} is muted for 24 hours")
 
 @app.message_handler(commands=['get_id'])
@@ -361,8 +454,6 @@ def get_id(message):
     if get_user(message) is None:
         send(message, get_id_usage)
         return
+    
     user, user_id = get_user(message)
     send(message, user_id)
-
-
-app.infinity_polling()
